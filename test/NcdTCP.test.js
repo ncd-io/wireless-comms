@@ -90,3 +90,89 @@ test('write() on a connected socket delivers the bytes', async (t) => {
 	const [chunk] = await data;
 	assert.deepStrictEqual([...chunk], [0x7e, 0x00, 0x04]);
 });
+
+// Opens a transport against a loopback server with a short reconnect delay. Returns the pieces.
+async function connected(t, delay = 30){
+	const srv = await server();
+	t.after(() => srv.stop());
+	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0);
+	tcp.tcpReconnectTime = delay;
+	t.after(() => tcp.close());
+	const events = [];
+	tcp.on('ready', () => events.push('ready'));
+	tcp.on('closed_comms', () => events.push('closed_comms'));
+	const connection = srv.connection();
+	const ready = next(tcp, 'ready');
+	tcp.setupClient();
+	const [socket] = await connection;
+	await ready;
+	return { srv, tcp, socket, events };
+}
+
+// RC-003: a close that carries no error was ignored, leaving _available true on a dead socket.
+test('a clean close by the far end is a drop: closed_comms, then a re-dial', async (t) => {
+	quiet(t);
+	const { srv, tcp, socket, events } = await connected(t);
+	const closed = next(tcp, 'closed_comms');
+	const again = srv.connection();
+	socket.end();
+	await closed;
+	assert.strictEqual(tcp._available, false);
+	await again;
+	await next(tcp, 'ready');
+	assert.strictEqual(tcp._available, true);
+	assert.deepStrictEqual(events, ['ready', 'closed_comms', 'ready']);
+	assert.strictEqual(srv.sockets.length, 2);
+});
+
+test('a close that carries an error is still a drop', async (t) => {
+	quiet(t);
+	const { srv, tcp, socket } = await connected(t);
+	const closed = next(tcp, 'closed_comms');
+	const again = srv.connection();
+	socket.resetAndDestroy();
+	await closed;
+	await again;
+	await next(tcp, 'ready');
+	assert.strictEqual(tcp._available, true);
+});
+
+test('the close of a socket that setupClient() replaced is not a drop', async (t) => {
+	quiet(t);
+	const { srv, tcp, events } = await connected(t);
+	const again = srv.connection();
+	const ready = next(tcp, 'ready');
+	tcp.setupClient();
+	await again;
+	await ready;
+	await wait(150); // five reconnect delays: a re-dial loop would show as more connections
+	assert.strictEqual(srv.sockets.length, 2, 'one connection per setupClient() call');
+	assert.deepStrictEqual(events, ['ready', 'ready']);
+	assert.strictEqual(tcp._available, true);
+});
+
+test('close() is deliberate: no closed_comms and no re-dial', async (t) => {
+	quiet(t);
+	const { srv, tcp, events } = await connected(t);
+	tcp.close();
+	await wait(150);
+	assert.strictEqual(tcp._available, false);
+	assert.strictEqual(srv.sockets.length, 1);
+	assert.deepStrictEqual(events, ['ready']);
+});
+
+// What Atrium does to point the link at another modem (radiolink.js apply, linkwatch.js redial).
+test('destroying the socket from outside and calling reconnect() ends in one new connection', async (t) => {
+	quiet(t);
+	const { srv, tcp } = await connected(t);
+	const again = srv.connection();
+	tcp.client.destroy();
+	tcp._available = false;
+	if(tcp.tout){ clearTimeout(tcp.tout); tcp.tout = null; }
+	tcp.reconnect();
+	await again;
+	await next(tcp, 'ready');
+	await wait(150);
+	assert.strictEqual(srv.sockets.length, 2);
+	assert.strictEqual(tcp._available, true);
+});
