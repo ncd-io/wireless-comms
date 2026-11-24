@@ -176,3 +176,99 @@ test('destroying the socket from outside and calling reconnect() ends in one new
 	assert.strictEqual(srv.sockets.length, 2);
 	assert.strictEqual(tcp._available, true);
 });
+
+// The reconnect contract (RC-030 and the rulings in the rebuild plan).
+test('reconnect() on an open link closes it and re-dials after the delay, without closed_comms', async (t) => {
+	quiet(t);
+	const { srv, tcp, events } = await connected(t);
+	const again = srv.connection();
+	tcp.reconnect();
+	assert.strictEqual(tcp._available, false);
+	await again;
+	await next(tcp, 'ready');
+	assert.deepStrictEqual(events, ['ready', 'ready']);
+	assert.strictEqual(srv.sockets.length, 2);
+});
+
+test('reconnect() while a re-dial is pending does not stack another', async (t) => {
+	quiet(t);
+	const { srv, tcp } = await connected(t);
+	const again = srv.connection();
+	tcp.reconnect();
+	tcp.reconnect();
+	tcp.reconnect();
+	await again;
+	await next(tcp, 'ready');
+	await wait(150);
+	assert.strictEqual(srv.sockets.length, 2);
+});
+
+test('close() stops a dial that is still in flight', async (t) => {
+	quiet(t);
+	const srv = await server();
+	t.after(() => srv.stop());
+	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0);
+	tcp.tcpReconnectTime = 30;
+	var readies = 0;
+	tcp.on('ready', () => readies++);
+	tcp.setupClient();
+	tcp.close();
+	await wait(150);
+	assert.strictEqual(readies, 0, 'the connection was never announced');
+	assert.strictEqual(tcp._available, false);
+	assert.strictEqual(tcp.tout, null);
+});
+
+test('after close(), reconnect() does nothing until setupClient() is called', async (t) => {
+	quiet(t);
+	const { srv, tcp } = await connected(t);
+	tcp.close();
+	tcp.reconnect();
+	assert.strictEqual(tcp.tout, null, 'no re-dial scheduled');
+	await wait(150);
+	assert.strictEqual(srv.sockets.length, 1);
+	assert.strictEqual(tcp._available, false);
+
+	const again = srv.connection();
+	const ready = next(tcp, 'ready');
+	tcp.setupClient();
+	await again;
+	await ready;
+	assert.strictEqual(tcp._available, true);
+});
+
+test('close() cancels the retry loop of a link that cannot connect', async (t) => {
+	quiet(t);
+	const srv = await server();
+	const port = srv.port;
+	await srv.stop(); // nothing listens on this port now
+	const tcp = new NcdTCP('127.0.0.1', port, false, 0);
+	tcp.tcpReconnectTime = 20;
+	var drops = 0;
+	tcp.on('closed_comms', () => drops++);
+	tcp.setupClient();
+	await wait(100);
+	assert.ok(drops >= 2, 'it was retrying');
+	tcp.close();
+	const seen = drops;
+	await wait(100);
+	assert.strictEqual(drops, seen, 'and stopped');
+	assert.strictEqual(tcp.tout, null);
+});
+
+test('the inactivity timeout closes and re-dials, without closed_comms', async (t) => {
+	quiet(t);
+	const srv = await server();
+	t.after(() => srv.stop());
+	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0.05);
+	tcp.tcpReconnectTime = 30;
+	t.after(() => tcp.close());
+	const events = [];
+	tcp.on('ready', () => events.push('ready'));
+	tcp.on('closed_comms', () => events.push('closed_comms'));
+	tcp.setupClient();
+	await next(tcp, 'ready');
+	await next(tcp, 'ready'); // 50 ms of silence, then 30 ms, then connected again
+	assert.deepStrictEqual(events, ['ready', 'ready']);
+	assert.ok(srv.sockets.length >= 2);
+});

@@ -98,3 +98,143 @@ test('write() on an open port passes the bytes through', async () => {
 	assert.strictEqual(error, null);
 	assert.deepStrictEqual(FakeSerialPort.last().written, [[1, 2, 3]]);
 });
+
+// The reconnect contract (RC-030 and the rulings in the rebuild plan).
+async function opened(){
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	const events = [];
+	serial.on('ready', () => events.push('ready'));
+	serial.on('closed_comms', () => events.push('closed_comms'));
+	const ready = next(serial, 'ready');
+	serial.setupSerial();
+	await ready;
+	return { serial, events, port: FakeSerialPort.last() };
+}
+
+test('an unexpected drop announces closed_comms and reopens at once', async (t) => {
+	quiet(t);
+	const { serial, events, port } = await opened();
+	port.simulateDrop();
+	assert.strictEqual(serial._available, false);
+	assert.strictEqual(FakeSerialPort.instances.length, 2, 'a new port object, with no delay');
+	await tick();
+	assert.strictEqual(serial._available, true);
+	assert.deepStrictEqual(events, ['ready', 'closed_comms', 'ready']);
+});
+
+test('a drop whose device is gone retries every 5 seconds until it is back', async (t) => {
+	quiet(t);
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	const { serial, events, port } = await opened();
+	FakeSerialPort.failOpen = true;
+	port.simulateDrop();
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 2);
+	t.mock.timers.tick(5000);
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 3);
+	FakeSerialPort.failOpen = false;
+	t.mock.timers.tick(5000);
+	await tick();
+	assert.strictEqual(serial._available, true);
+	assert.deepStrictEqual(events, ['ready', 'closed_comms', 'ready']);
+	assert.strictEqual(serial.tout, null);
+});
+
+test('reconnect() on an open port closes it and reopens after 5 seconds, without closed_comms', async (t) => {
+	quiet(t);
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	const { serial, events, port } = await opened();
+	serial.reconnect();
+	assert.strictEqual(serial._available, false);
+	await tick();
+	assert.strictEqual(port.isOpen, false, 'the port was closed');
+	t.mock.timers.tick(4999);
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 1, 'not reopened before 5 s');
+	t.mock.timers.tick(1);
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 2);
+	assert.strictEqual(serial._available, true);
+	assert.deepStrictEqual(events, ['ready', 'ready']);
+});
+
+test('reconnect() on a port that is already retrying opens no second port', async (t) => {
+	quiet(t);
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	FakeSerialPort.failOpen = true;
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	serial.setupSerial();
+	await tick();
+	serial.reconnect();
+	serial.reconnect();
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 1);
+	t.mock.timers.tick(5000);
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 2, 'one retry, on schedule');
+});
+
+test('close() cancels a pending retry', async (t) => {
+	quiet(t);
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	FakeSerialPort.failOpen = true;
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	serial.setupSerial();
+	await tick();
+	assert.notStrictEqual(serial.tout, null);
+	serial.close();
+	assert.strictEqual(serial.tout, null);
+	FakeSerialPort.failOpen = false;
+	t.mock.timers.tick(20000);
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 1);
+	assert.strictEqual(serial._available, false);
+});
+
+test('close() while the port is still opening leaves it closed and unannounced', async () => {
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	var readies = 0;
+	serial.on('ready', () => readies++);
+	serial.setupSerial();
+	serial.close();
+	await tick();
+	await tick();
+	assert.strictEqual(readies, 0);
+	assert.strictEqual(serial._available, false);
+	assert.strictEqual(FakeSerialPort.last().isOpen, false);
+});
+
+test('after close(), reconnect() does nothing until setupSerial() is called', async (t) => {
+	quiet(t);
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	const { serial, port } = await opened();
+	serial.close();
+	await tick();
+	assert.strictEqual(port.isOpen, false);
+	serial.reconnect();
+	assert.strictEqual(serial.tout, null, 'no retry scheduled');
+	t.mock.timers.tick(20000);
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 1);
+
+	serial.setupSerial();
+	await tick();
+	assert.strictEqual(serial._available, true);
+});
+
+test('a port object that has been replaced is ignored', async (t) => {
+	quiet(t);
+	const { serial, events, port } = await opened();
+	serial.setupSerial();
+	await tick();
+	const seen = [];
+	serial.on('data', (b) => seen.push(b));
+	port.simulateData([1, 2, 3]);
+	port.simulateDrop();
+	await tick();
+	assert.deepStrictEqual(seen, []);
+	assert.deepStrictEqual(events, ['ready', 'ready']);
+	assert.strictEqual(FakeSerialPort.instances.length, 2);
+	assert.strictEqual(serial._available, true);
+});
