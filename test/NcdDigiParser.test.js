@@ -164,3 +164,12 @@ test('receive options decode the ack bit, the broadcast bit and the delivery met
 	assert.deepStrictEqual(options(0x42), { ack: false, broadcast: true, type: 'Point-Multipoint' });
 	assert.deepStrictEqual(options(0x01), { ack: true, broadcast: false, type: '' });
 });
+
+// RC-008: chunk() sliced `this` and used an undeclared loop variable, so any 0x92 frame threw.
+test('an I/O sample frame parses, with its analog samples as 16-bit values', () => {
+	const { transport, frames } = setup();
+	transport.receive(apiFrame(0x92, [...MAC, 0xff, 0xfe, 0xc1, 1, 0x00, 0x03, 0x03, 0x00, 0x03, 0x02, 0x10, 0x01, 0x00]));
+	assert.strictEqual(frames[0].type, 'io_data_sample_indicator');
+	assert.strictEqual(frames[0].digital_samples, 3);
+	assert.deepStrictEqual(frames[0].analog_samples, [0x0210, 0x0100]);
+});
