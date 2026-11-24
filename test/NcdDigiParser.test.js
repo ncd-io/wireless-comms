@@ -119,3 +119,15 @@ test('modem_status with a status byte the parser has no text for does not throw'
 	transport.receive(apiFrame(0x8a, [0x02]));
 	assert.deepStrictEqual(frames[0], { status: 'Unknown', status_code: 2, type: 'modem_status' });
 });
+
+// RC-005: parse() returned undefined for a type it has no decoder for and dataIn() then threw.
+test('a frame type with no decoder is emitted as type "unknown", undecoded', () => {
+	const { transport, digi, frames } = setup();
+	const unknown = [];
+	digi.on('unknown', (f) => unknown.push(f));
+	transport.receive(apiFrame(0xa1, [1, 2, 3]));
+	assert.deepStrictEqual(frames[0], { frame_type: 0xa1, data: [1, 2, 3], type: 'unknown' });
+	assert.strictEqual(unknown.length, 1);
+	transport.receive(apiFrame(0x90, [...MAC, 0xff, 0xfe, 0xc1, 0x7f]));
+	assert.strictEqual(frames[1].type, 'receive_packet', 'and the parser carries on');
+});
