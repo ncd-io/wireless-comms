@@ -286,3 +286,14 @@ test('close(cb) calls back on a transport that was never opened', async () => {
 	const tcp = new NcdTCP('127.0.0.1', 1, false, 0);
 	await new Promise((resolve) => tcp.close(resolve));
 });
+
+test('removeListener() detaches a listener added with on()', () => {
+	const tcp = new NcdTCP('127.0.0.1', 1, false, 0);
+	var calls = 0;
+	const listener = () => calls++;
+	tcp.on('data', listener);
+	tcp._emitter.emit('data', 1);
+	tcp.removeListener('data', listener);
+	tcp._emitter.emit('data', 2);
+	assert.strictEqual(calls, 1);
+});

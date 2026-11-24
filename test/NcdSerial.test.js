@@ -250,3 +250,14 @@ test('close(cb) calls back on a transport that was never opened', async () => {
 	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
 	await new Promise((resolve) => serial.close(resolve));
 });
+
+test('removeListener() detaches a listener added with on()', () => {
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	var calls = 0;
+	const listener = () => calls++;
+	serial.on('data', listener);
+	serial._emitter.emit('data', 1);
+	serial.removeListener('data', listener);
+	serial._emitter.emit('data', 2);
+	assert.strictEqual(calls, 1);
+});
