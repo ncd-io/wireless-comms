@@ -275,3 +275,29 @@ test('NcdSerial.list() resolves with the ports serialport reports', async () => 
 	FakeSerialPort.ports = [{ path: '/dev/ttyUSB0', manufacturer: 'FTDI' }];
 	assert.deepStrictEqual(await NcdSerial.list(), [{ path: '/dev/ttyUSB0', manufacturer: 'FTDI' }]);
 });
+
+// The options argument (plan addendum A-1).
+test('with no options the reconnect time is 5 seconds', () => {
+	assert.strictEqual(new NcdSerial('/dev/ttyFAKE', 115200).serialReconnectTime, 5000);
+});
+
+test('reconnectMs sets the delay reconnect() waits', (t) => {
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200, { reconnectMs: 250 });
+	assert.strictEqual(serial.serialReconnectTime, 250);
+	var opens = 0;
+	serial.setupSerial = () => { opens++; };
+	serial.reconnect();
+	t.mock.timers.tick(249);
+	assert.strictEqual(opens, 0);
+	t.mock.timers.tick(1);
+	assert.strictEqual(opens, 1);
+});
+
+test('a bad options argument is refused', () => {
+	assert.throws(() => new NcdSerial('/dev/ttyFAKE', 115200, 5000), TypeError);
+	assert.throws(() => new NcdSerial('/dev/ttyFAKE', 115200, null), TypeError);
+	assert.throws(() => new NcdSerial('/dev/ttyFAKE', 115200, {}, {}), TypeError);
+	assert.throws(() => new NcdSerial('/dev/ttyFAKE', 115200, { reconnectMs: 0 }), TypeError);
+	assert.throws(() => new NcdSerial('/dev/ttyFAKE', 115200, { inactivityTimeoutSec: 5 }), /inactivityTimeoutSec/);
+});

@@ -14,7 +14,7 @@ test('the constructors do no I/O', () => {
 	const FakeSerialPort = require('./helpers/fake-serialport');
 	FakeSerialPort.reset();
 	const serial = new comms.NcdSerial('/dev/null', 115200);
-	const tcp = new comms.NcdTCP('127.0.0.1', 1, false, 0);
+	const tcp = new comms.NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: 0 });
 	assert.strictEqual(FakeSerialPort.instances.length, 0);
 	assert.strictEqual(serial._available, false);
 	assert.strictEqual(tcp._available, false);

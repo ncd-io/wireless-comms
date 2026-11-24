@@ -31,10 +31,34 @@ The constructors do no I/O. Call `setupSerial()` on an `NcdSerial`, or `setupCli
 `NcdTCP`, to open the link.
 
 ```js
-new comms.NcdSerial(path, baudRate);
-new comms.NcdTCP(host, port, crypto, inactivityTimeoutSeconds); // crypto is unused; pass false
+new comms.NcdSerial(path, baudRate, options);
+new comms.NcdTCP(host, port, options);
 comms.NcdSerial.list(); // resolves with the serial ports on this machine
 ```
+
+`options` is an object and may be left out. Each key is optional.
+
+| Option | Transport | Default | Meaning |
+|---|---|---|---|
+| `reconnectMs` | both | `5000` | Milliseconds to wait before a retry. Must be above 0 |
+| `inactivityTimeoutSec` | `NcdTCP` | `900` | Seconds without traffic after which the socket is closed and reopened. `0` or `false` turns this off |
+| `keepAlive` | `NcdTCP` | `true` | Whether TCP keepalive is on |
+| `keepAliveInitialDelayMs` | `NcdTCP` | `0` | Idle milliseconds before the first keepalive probe. `0` leaves it to the operating system |
+
+```js
+new comms.NcdTCP('192.168.1.50', 2101, { reconnectMs: 2000, inactivityTimeoutSec: 0 });
+```
+
+An unknown option, a value of the wrong type, or an extra argument throws a `TypeError`. This
+includes the `ncd-red-comm` call `new NcdTCP(host, port, false, timeout)`: the `crypto` argument is
+gone, and the timeout is now `inactivityTimeoutSec`.
+
+Node sets only the delay before the first keepalive probe. The interval between probes and the
+number of probes come from the operating system.
+
+`NcdSerial.list()` reports what `serialport` reports. On Linux that needs `udevadm` on the system,
+and it lists only ports with common names (`ttyS`, `ttyUSB`, `ttyACM`, `ttyAMA` and a few others).
+A port it does not list can still be opened by path.
 
 ## Transports
 
@@ -47,20 +71,17 @@ Both transports behave the same way.
 | `closed_comms` | the link dropped unexpectedly |
 
 **The transport owns reconnection.** After an unexpected drop it retries until the link is back. TCP
-retries every 5 seconds. Serial tries once at once, then every 5 seconds. A consumer does not need to
+retries every `reconnectMs`, 5 seconds by default. Serial tries once at once, then every `reconnectMs`. A consumer does not need to
 call anything to recover from a drop.
 
 | Call | Effect |
 |---|---|
 | `write(bytes, cb)` | On an open link, sends the bytes and returns `true`. On a closed link nothing is queued: it returns `false` and `cb` is called with an error whose `code` is `ERR_NCD_NOT_CONNECTED` |
-| `reconnect()` | Drops the link if it is up and reopens it after 5 seconds. If the link is already down, makes sure one retry is pending. Does not emit `closed_comms` |
+| `reconnect()` | Drops the link if it is up and reopens it after `reconnectMs`. If the link is already down, makes sure one retry is pending. Does not emit `closed_comms` |
 | `close(cb)` | Stops: cancels any pending retry and closes the link, even one that is still opening. The link stays closed, and `reconnect()` does nothing, until `setupSerial()` or `setupClient()` is called again |
 | `on(event, fn)`, `removeListener(event, fn)` | Attach and detach listeners |
 
 `_available` is `true` while the link is open.
-
-An `NcdTCP` built with an inactivity timeout closes and reopens the socket after that many seconds
-without traffic. Pass `0` or `false` to turn it off.
 
 ## Digi parser
 

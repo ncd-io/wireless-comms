@@ -6,7 +6,7 @@ const { next, wait, server, quiet } = require('./helpers/util');
 
 test('reconnect() waits 5 seconds before re-dialling', (t) => {
 	t.mock.timers.enable({ apis: ['setTimeout'] });
-	const tcp = new NcdTCP('127.0.0.1', 1, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: 0 });
 	var dials = 0;
 	tcp.setupClient = () => { dials++; };
 
@@ -21,7 +21,7 @@ test('reconnect() waits 5 seconds before re-dialling', (t) => {
 // RC-004: a cleared timer left in `tout` makes every later reconnect() a silent no-op.
 test('close() leaves no retry handle behind', (t) => {
 	t.mock.timers.enable({ apis: ['setTimeout'] });
-	const tcp = new NcdTCP('127.0.0.1', 1, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: 0 });
 	tcp.setupClient = () => {};
 	tcp.reconnect();
 	assert.notStrictEqual(tcp.tout, null, 'a re-dial is pending');
@@ -33,7 +33,7 @@ test('a connect that beats a pending re-dial leaves no retry handle behind', asy
 	quiet(t);
 	const srv = await server();
 	t.after(() => srv.stop());
-	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', srv.port, { inactivityTimeoutSec: 0 });
 	t.after(() => tcp.close());
 
 	tcp.reconnect();
@@ -48,7 +48,7 @@ test('a connect that beats a pending re-dial leaves no retry handle behind', asy
 test('write() on a closed socket fails at once, queues nothing and dials nothing', async (t) => {
 	const srv = await server();
 	t.after(() => srv.stop());
-	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', srv.port, { inactivityTimeoutSec: 0 });
 	t.after(() => tcp.close());
 	const listeners = tcp._emitter.listenerCount('ready');
 
@@ -78,7 +78,7 @@ test('write() on a closed socket fails at once, queues nothing and dials nothing
 test('write() on a connected socket delivers the bytes', async (t) => {
 	const srv = await server();
 	t.after(() => srv.stop());
-	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', srv.port, { inactivityTimeoutSec: 0 });
 	t.after(() => tcp.close());
 	const connection = srv.connection();
 	const ready = next(tcp, 'ready');
@@ -95,7 +95,7 @@ test('write() on a connected socket delivers the bytes', async (t) => {
 async function connected(t, delay = 30){
 	const srv = await server();
 	t.after(() => srv.stop());
-	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', srv.port, { inactivityTimeoutSec: 0 });
 	tcp.tcpReconnectTime = delay;
 	t.after(() => tcp.close());
 	const events = [];
@@ -207,7 +207,7 @@ test('close() stops a dial that is still in flight', async (t) => {
 	quiet(t);
 	const srv = await server();
 	t.after(() => srv.stop());
-	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', srv.port, { inactivityTimeoutSec: 0 });
 	tcp.tcpReconnectTime = 30;
 	var readies = 0;
 	tcp.on('ready', () => readies++);
@@ -242,7 +242,7 @@ test('close() cancels the retry loop of a link that cannot connect', async (t) =
 	const srv = await server();
 	const port = srv.port;
 	await srv.stop(); // nothing listens on this port now
-	const tcp = new NcdTCP('127.0.0.1', port, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', port, { inactivityTimeoutSec: 0 });
 	tcp.tcpReconnectTime = 20;
 	var drops = 0;
 	tcp.on('closed_comms', () => drops++);
@@ -260,7 +260,7 @@ test('the inactivity timeout closes and re-dials, without closed_comms', async (
 	quiet(t);
 	const srv = await server();
 	t.after(() => srv.stop());
-	const tcp = new NcdTCP('127.0.0.1', srv.port, false, 0.05);
+	const tcp = new NcdTCP('127.0.0.1', srv.port, { inactivityTimeoutSec: 0.05 });
 	tcp.tcpReconnectTime = 30;
 	t.after(() => tcp.close());
 	const events = [];
@@ -283,12 +283,12 @@ test('close(cb) calls back once the socket is down', async (t) => {
 });
 
 test('close(cb) calls back on a transport that was never opened', async () => {
-	const tcp = new NcdTCP('127.0.0.1', 1, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: 0 });
 	await new Promise((resolve) => tcp.close(resolve));
 });
 
 test('removeListener() detaches a listener added with on()', () => {
-	const tcp = new NcdTCP('127.0.0.1', 1, false, 0);
+	const tcp = new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: 0 });
 	var calls = 0;
 	const listener = () => calls++;
 	tcp.on('data', listener);
@@ -296,4 +296,94 @@ test('removeListener() detaches a listener added with on()', () => {
 	tcp.removeListener('data', listener);
 	tcp._emitter.emit('data', 2);
 	assert.strictEqual(calls, 1);
+});
+
+// The options argument (plan addendum A-1).
+test('with no options the defaults apply', () => {
+	const tcp = new NcdTCP('127.0.0.1', 1);
+	assert.strictEqual(tcp.tcpReconnectTime, 5000);
+	assert.strictEqual(tcp.inactive_timeout, 900);
+	assert.strictEqual(tcp.keepAlive, true);
+	assert.strictEqual(tcp.keepAliveInitialDelay, 0);
+});
+
+test('options set the reconnect time, the inactivity timeout and keepalive', () => {
+	const tcp = new NcdTCP('127.0.0.1', 1, {
+		reconnectMs: 250,
+		inactivityTimeoutSec: 30,
+		keepAlive: false,
+		keepAliveInitialDelayMs: 4000
+	});
+	assert.strictEqual(tcp.tcpReconnectTime, 250);
+	assert.strictEqual(tcp.inactive_timeout, 30);
+	assert.strictEqual(tcp.keepAlive, false);
+	assert.strictEqual(tcp.keepAliveInitialDelay, 4000);
+});
+
+test('an option left out keeps its default', () => {
+	const tcp = new NcdTCP('127.0.0.1', 1, { reconnectMs: 250 });
+	assert.strictEqual(tcp.tcpReconnectTime, 250);
+	assert.strictEqual(tcp.inactive_timeout, 900);
+});
+
+test('inactivityTimeoutSec: false turns the inactivity timeout off, as 0 does', () => {
+	assert.strictEqual(new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: false }).inactive_timeout, 0);
+	assert.strictEqual(new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: 0 }).inactive_timeout, 0);
+});
+
+test('reconnectMs is the delay reconnect() waits', (t) => {
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	const tcp = new NcdTCP('127.0.0.1', 1, { reconnectMs: 250, inactivityTimeoutSec: 0 });
+	var dials = 0;
+	tcp.setupClient = () => { dials++; };
+	tcp.reconnect();
+	t.mock.timers.tick(249);
+	assert.strictEqual(dials, 0);
+	t.mock.timers.tick(1);
+	assert.strictEqual(dials, 1);
+});
+
+test('the keepalive options are applied to the socket', async (t) => {
+	const net = require('net');
+	const calls = [];
+	t.mock.method(net.Socket.prototype, 'setKeepAlive', function(...args){ calls.push(args); return this; });
+	const srv = await server();
+	t.after(() => srv.stop());
+	const tcp = new NcdTCP('127.0.0.1', srv.port, { inactivityTimeoutSec: 0, keepAliveInitialDelayMs: 4000 });
+	t.after(() => tcp.close());
+	const ready = next(tcp, 'ready');
+	tcp.setupClient();
+	await ready;
+	assert.deepStrictEqual(calls, [[true, 4000]]);
+});
+
+// A call written for ncd-red-comm must not run with its timeout silently dropped.
+test('the old four-argument call is refused', () => {
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, false, 0), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, false, 1200), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, {}, 1200), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, false), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, null), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, [5000]), TypeError);
+});
+
+test('an unknown option is refused', () => {
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { reconnectMS: 250 }), /reconnectMS/);
+});
+
+test('an option with a bad value is refused', () => {
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { reconnectMs: 0 }), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { reconnectMs: -1 }), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { reconnectMs: '5000' }), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { reconnectMs: false }), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: -1 }), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { inactivityTimeoutSec: NaN }), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { keepAlive: 1 }), TypeError);
+	assert.throws(() => new NcdTCP('127.0.0.1', 1, { keepAliveInitialDelayMs: -5 }), TypeError);
+});
+
+test('the crypto argument and setCrypto() are gone', () => {
+	const tcp = new NcdTCP('127.0.0.1', 1);
+	assert.strictEqual('crypto' in tcp, false);
+	assert.strictEqual(tcp.setCrypto, undefined);
 });
