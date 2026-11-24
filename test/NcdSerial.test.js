@@ -238,3 +238,15 @@ test('a port object that has been replaced is ignored', async (t) => {
 	assert.strictEqual(FakeSerialPort.instances.length, 2);
 	assert.strictEqual(serial._available, true);
 });
+
+// RC-031: close(cb) never called its callback.
+test('close(cb) calls back once the port is down', async () => {
+	const { serial, port } = await opened();
+	await new Promise((resolve) => serial.close(resolve));
+	assert.strictEqual(port.isOpen, false);
+});
+
+test('close(cb) calls back on a transport that was never opened', async () => {
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	await new Promise((resolve) => serial.close(resolve));
+});

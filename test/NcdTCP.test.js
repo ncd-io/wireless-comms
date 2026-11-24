@@ -272,3 +272,17 @@ test('the inactivity timeout closes and re-dials, without closed_comms', async (
 	assert.deepStrictEqual(events, ['ready', 'ready']);
 	assert.ok(srv.sockets.length >= 2);
 });
+
+// RC-031: close(cb) never called its callback.
+test('close(cb) calls back once the socket is down', async (t) => {
+	quiet(t);
+	const { tcp } = await connected(t);
+	const client = tcp.client;
+	await new Promise((resolve) => tcp.close(resolve));
+	assert.strictEqual(client.destroyed, true);
+});
+
+test('close(cb) calls back on a transport that was never opened', async () => {
+	const tcp = new NcdTCP('127.0.0.1', 1, false, 0);
+	await new Promise((resolve) => tcp.close(resolve));
+});
