@@ -1,32 +1,22 @@
 {
-    "name": "ncd-red-comm",
-    "version": "2.0.3",
-    "description": "NCD Communications configuration node for node-red",
+    "name": "@ncd-io/wireless-comms",
+    "version": "1.0.0",
+    "description": "Serial and TCP transports and the DigiMesh frame parser for NCD wireless devices",
     "main": "index.js",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/ncd-io/ncd-red-comm"
+        "url": "https://github.com/ncd-io/wireless-comms"
     },
     "author": "Trey Felton",
     "license": "MIT",
-    "node-red": {
-        "nodes": {
-            "ncd-comm": "ncd-comm.js"
-        }
-    },
     "dependencies": {
-        "promise-queue": "^2.2.5",
-        "requeued": "^1.1.0",
         "serialport": "^9.2.4"
     },
-    "optionalDependencies": {
-        "i2c-bus": "^5.2.1"
-    },
     "bugs": {
-        "url": "https://github.com/ncd-io/ncd-red-comm/issues"
+        "url": "https://github.com/ncd-io/wireless-comms/issues"
     },
-    "homepage": "https://github.com/ncd-io/ncd-red-comm#readme"
+    "homepage": "https://github.com/ncd-io/wireless-comms#readme"
 }

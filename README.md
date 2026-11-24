@@ -1,13 +1,35 @@
-[![Build Status](https://semaphoreci.com/api/v1/zaphod-42/ncd-red-comm/branches/master/badge.svg)](https://semaphoreci.com/zaphod-42/ncd-red-comm)
+# @ncd-io/wireless-comms
 
-# NCD Comm
+Communication classes for NCD wireless devices: two byte-pipe transports and the DigiMesh frame
+parser that runs on top of them.
 
-This library provides the basic communication classes used by the ncd-red-* modules for ncd.io devices. You generally should not need to install this library, as it will be included as a dependency by other libraries as needed.
+This package is the successor to [`ncd-red-comm`](https://github.com/ncd-io/ncd-red-comm). It keeps
+the parts of that library used for wireless communication and drops the rest: there is no Node-RED
+node here and no I2C support. `ncd-red-comm` remains published, unchanged, for existing installs.
 
-When using Node-Red, this library provides a configuration node to supply I2C communication to the other NCD nodes.
+## Exports
 
-This library provides classes for communicating with a native I2C bus (via the node i2c-bus package) and a USB to I2C converter available from [ncd.io](https://store.ncd.io/product/usb-to-i2c-converter-with-virtual-com-port-ft230xs/)
+| Export | What it is |
+|---|---|
+| `NcdSerial` | Transport over a serial port |
+| `NcdTCP` | Transport over a TCP socket |
+| `NcdDigiParser` | Builds and parses Digi XBee API frames over either transport |
 
-Neat trick... run this in a bash console to install all of our ncd-red packages!
+```js
+const comms = require('@ncd-io/wireless-comms');
 
-`npm i $(npm search --parseable ncd-red | cut -f 1)`
+const transport = new comms.NcdSerial('/dev/ttyUSB0', 115200);
+const modem = new comms.NcdDigiParser(transport);
+
+transport.on('ready', () => {
+	modem.send.at_command('SL').then((res) => console.log(res.data));
+});
+transport.setupSerial();
+```
+
+The constructors do no I/O. Call `setupSerial()` on an `NcdSerial`, or `setupClient()` on an
+`NcdTCP`, to open the link.
+
+## License
+
+MIT
