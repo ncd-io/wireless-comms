@@ -261,3 +261,17 @@ test('removeListener() detaches a listener added with on()', () => {
 	serial._emitter.emit('data', 2);
 	assert.strictEqual(calls, 1);
 });
+
+// serialport 10 and later: a named export, constructed from one options object.
+test('the port is constructed the serialport 12 way, closed until opened', async () => {
+	const { port } = await opened();
+	assert.strictEqual(port.objectForm, true, 'one options object, not (path, options)');
+	assert.strictEqual(port.path, '/dev/ttyFAKE');
+	assert.strictEqual(port.options.baudRate, 115200);
+	assert.strictEqual(port.options.autoOpen, false);
+});
+
+test('NcdSerial.list() resolves with the ports serialport reports', async () => {
+	FakeSerialPort.ports = [{ path: '/dev/ttyUSB0', manufacturer: 'FTDI' }];
+	assert.deepStrictEqual(await NcdSerial.list(), [{ path: '/dev/ttyUSB0', manufacturer: 'FTDI' }]);
+});

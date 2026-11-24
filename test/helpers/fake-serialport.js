@@ -9,7 +9,8 @@ const Module = require('module');
 class FakeSerialPort extends EventEmitter{
 	constructor(path, options){
 		super();
-		if(path !== null && typeof path == 'object'){
+		this.objectForm = path !== null && typeof path == 'object';
+		if(this.objectForm){
 			options = path;
 			path = options.path;
 		}
