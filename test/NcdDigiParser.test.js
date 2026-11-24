@@ -150,3 +150,17 @@ test('transmit_status.hasError reports delivery failure, not route discovery', a
 	assert.strictEqual(bad.discovery_status, 'No discovery overhead');
 	assert.strictEqual(bad.hasError, true);
 });
+
+// RC-007: `byte & 2 == 2` is `byte & 1`, so every test read bit 0.
+test('receive options decode the ack bit, the broadcast bit and the delivery method', () => {
+	const { transport, frames } = setup();
+	const options = (byte) => {
+		transport.receive(apiFrame(0x90, [...MAC, 0xff, 0xfe, byte, 0x7f]));
+		return frames[frames.length - 1].receive_options;
+	};
+	assert.deepStrictEqual(options(0xc1), { ack: true, broadcast: false, type: 'DigiMesh' });
+	assert.deepStrictEqual(options(0xc2), { ack: false, broadcast: true, type: 'DigiMesh' });
+	assert.deepStrictEqual(options(0x81), { ack: true, broadcast: false, type: 'Repeater Mode' });
+	assert.deepStrictEqual(options(0x42), { ack: false, broadcast: true, type: 'Point-Multipoint' });
+	assert.deepStrictEqual(options(0x01), { ack: true, broadcast: false, type: '' });
+});
