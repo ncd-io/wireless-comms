@@ -210,3 +210,19 @@ test('node identification: the optional fields appear only when the frame holds 
 	assert.deepStrictEqual(full.digi_dd, [31, 32, 33, 34]);
 	assert.strictEqual(full.rssi, 35);
 });
+
+test('a request rejects at once when the transport refuses the write', async (t) => {
+	quiet(t);
+	const { transport, digi } = setup();
+	digi._timoutLimit = 5000;
+	transport.available = false;
+	const started = Date.now();
+	await assert.rejects(digi.send.at_command('SL'), (err) => {
+		assert.strictEqual(err.error, 'Transport refused the write');
+		assert.strictEqual(err.cause.code, 'ERR_NCD_NOT_CONNECTED');
+		assert.deepStrictEqual(err.original, [8, 1, 0x53, 0x4c]);
+		return true;
+	});
+	assert.ok(Date.now() - started < 1000, 'well before the 5 s response timeout');
+	assert.strictEqual(digi._emitter.listenerCount('digi-response:1'), 0, 'no listener left for the frame id');
+});
