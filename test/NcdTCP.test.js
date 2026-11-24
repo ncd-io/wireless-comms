@@ -387,3 +387,18 @@ test('the crypto argument and setCrypto() are gone', () => {
 	assert.strictEqual('crypto' in tcp, false);
 	assert.strictEqual(tcp.setCrypto, undefined);
 });
+
+// RC-035, TCP side: close() from a listener already stopped the re-dial, but left a timer in `tout`.
+test('close() from inside a closed_comms listener holds and leaves no retry handle', async (t) => {
+	quiet(t);
+	const { srv, tcp, socket, events } = await connected(t);
+	tcp.on('closed_comms', () => tcp.close());
+	const closed = next(tcp, 'closed_comms');
+	socket.end();
+	await closed;
+	assert.strictEqual(tcp.tout, null, 'no re-dial pending');
+	await wait(150);
+	assert.strictEqual(srv.sockets.length, 1);
+	assert.strictEqual(tcp._available, false);
+	assert.deepStrictEqual(events, ['ready', 'closed_comms']);
+});

@@ -78,7 +78,7 @@ call anything to recover from a drop.
 |---|---|
 | `write(bytes, cb)` | On an open link, sends the bytes and returns `true`. On a closed link nothing is queued: it returns `false` and `cb` is called with an error whose `code` is `ERR_NCD_NOT_CONNECTED` |
 | `reconnect()` | Drops the link if it is up and reopens it after `reconnectMs`. If the link is already down, makes sure one retry is pending. Does not emit `closed_comms` |
-| `close(cb)` | Stops: cancels any pending retry and closes the link, even one that is still opening. The link stays closed, and `reconnect()` does nothing, until `setupSerial()` or `setupClient()` is called again |
+| `close(cb)` | Stops: cancels any pending retry and closes the link, even one that is still opening. The link stays closed, and `reconnect()` does nothing, until `setupSerial()` or `setupClient()` is called again. It may be called from a `closed_comms` listener to stop the automatic retry |
 | `on(event, fn)`, `removeListener(event, fn)` | Attach and detach listeners |
 
 `_available` is `true` while the link is open.

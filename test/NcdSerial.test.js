@@ -301,3 +301,31 @@ test('a bad options argument is refused', () => {
 	assert.throws(() => new NcdSerial('/dev/ttyFAKE', 115200, { reconnectMs: 0 }), TypeError);
 	assert.throws(() => new NcdSerial('/dev/ttyFAKE', 115200, { inactivityTimeoutSec: 5 }), /inactivityTimeoutSec/);
 });
+
+// RC-035: the reopen that follows closed_comms undid a close() made by a listener.
+test('close() from inside a closed_comms listener holds: no reopen, no retry', async (t) => {
+	quiet(t);
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	const { serial, events, port } = await opened();
+	serial.on('closed_comms', () => serial.close());
+	port.simulateDrop();
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 1, 'no new port object');
+	assert.strictEqual(serial.tout, null, 'no retry pending');
+	t.mock.timers.tick(20000);
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 1);
+	assert.strictEqual(serial._available, false);
+	assert.deepStrictEqual(events, ['ready', 'closed_comms']);
+});
+
+test('setupSerial() from inside a closed_comms listener opens one port, not two', async (t) => {
+	quiet(t);
+	const { serial, events, port } = await opened();
+	serial.on('closed_comms', () => serial.setupSerial());
+	port.simulateDrop();
+	await tick();
+	assert.strictEqual(FakeSerialPort.instances.length, 2);
+	assert.strictEqual(serial._available, true);
+	assert.deepStrictEqual(events, ['ready', 'closed_comms', 'ready']);
+});
