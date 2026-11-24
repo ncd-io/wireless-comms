@@ -131,3 +131,22 @@ test('a frame type with no decoder is emitted as type "unknown", undecoded', () 
 	transport.receive(apiFrame(0x90, [...MAC, 0xff, 0xfe, 0xc1, 0x7f]));
 	assert.strictEqual(frames[1].type, 'receive_packet', 'and the parser carries on');
 });
+
+// RC-013: hasError followed the discovery byte, so a delivered frame that needed route discovery
+// read as failed and a failed delivery on a known route read as fine.
+test('transmit_status.hasError reports delivery failure, not route discovery', async () => {
+	const { transport, digi } = setup();
+	const delivered = digi.send.transmit_request(MAC, [1]);
+	transport.receive(apiFrame(0x8b, [1, 0xff, 0xfe, 0, 0x00, 0x02]));
+	const ok = await delivered;
+	assert.strictEqual(ok.delivery_status, 'Success');
+	assert.strictEqual(ok.discovery_status, 'Route discovery');
+	assert.strictEqual(ok.hasError, false);
+
+	const failed = digi.send.transmit_request(MAC, [1]);
+	transport.receive(apiFrame(0x8b, [2, 0xff, 0xfe, 3, 0x01, 0x00]));
+	const bad = await failed;
+	assert.strictEqual(bad.delivery_status, 'MAC ACK failure');
+	assert.strictEqual(bad.discovery_status, 'No discovery overhead');
+	assert.strictEqual(bad.hasError, true);
+});
