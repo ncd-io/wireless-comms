@@ -63,3 +63,38 @@ test('no retry handle is left behind once the port is open', async (t) => {
 	assert.strictEqual(serial._available, true);
 	assert.strictEqual(serial.tout, null);
 });
+
+// RC-002 and the write-on-closed-link ruling: nothing is queued for the next ready.
+test('write() on a closed port fails at once and is never replayed', async () => {
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	const listeners = serial._emitter.listenerCount('ready');
+
+	var error;
+	const returned = serial.write([1, 2, 3], (err) => { error = err; });
+	assert.strictEqual(returned, false);
+	assert.strictEqual(error, undefined, 'the callback is not called synchronously');
+	await tick();
+	assert.ok(error instanceof Error);
+	assert.strictEqual(error.code, 'ERR_NCD_NOT_CONNECTED');
+	assert.strictEqual(serial._emitter.listenerCount('ready'), listeners, 'no listener left behind');
+
+	assert.strictEqual(serial.write([4, 5, 6]), false, 'no callback is fine');
+
+	const ready = next(serial, 'ready');
+	serial.setupSerial();
+	await ready;
+	await tick();
+	assert.deepStrictEqual(FakeSerialPort.last().written, [], 'nothing was held back and sent on ready');
+});
+
+test('write() on an open port passes the bytes through', async () => {
+	const serial = new NcdSerial('/dev/ttyFAKE', 115200);
+	const ready = next(serial, 'ready');
+	serial.setupSerial();
+	await ready;
+	var error = 'not called';
+	assert.strictEqual(serial.write([1, 2, 3], (err) => { error = err; }), true);
+	await tick();
+	assert.strictEqual(error, null);
+	assert.deepStrictEqual(FakeSerialPort.last().written, [[1, 2, 3]]);
+});
