@@ -191,3 +191,22 @@ test('close() also detaches from a transport that has no removeListener()', () =
 	digi.close();
 	assert.strictEqual(transport._emitter.listenerCount('data'), 0);
 });
+
+// RC-014: the guards were one short, giving a truncated digi_dd or an undefined rssi.
+test('node identification: the optional fields appear only when the frame holds them whole', () => {
+	const { transport, frames } = setup();
+	const node = (length) => {
+		const data = Array.from({ length }, (_, i) => i);
+		transport.receive(apiFrame(0x95, data));
+		return frames[frames.length - 1];
+	};
+	const short = node(34);
+	assert.strictEqual('digi_dd' in short, false);
+	assert.strictEqual('rssi' in short, false);
+	const withDd = node(35);
+	assert.deepStrictEqual(withDd.digi_dd, [31, 32, 33, 34]);
+	assert.strictEqual('rssi' in withDd, false);
+	const full = node(36);
+	assert.deepStrictEqual(full.digi_dd, [31, 32, 33, 34]);
+	assert.strictEqual(full.rssi, 35);
+});
