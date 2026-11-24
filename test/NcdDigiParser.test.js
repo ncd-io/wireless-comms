@@ -173,3 +173,21 @@ test('an I/O sample frame parses, with its analog samples as 16-bit values', () 
 	assert.strictEqual(frames[0].digital_samples, 3);
 	assert.deepStrictEqual(frames[0].analog_samples, [0x0210, 0x0100]);
 });
+
+// RC-010: close() removed the data listener from the parser's own emitter, where it never was.
+test('close() detaches the parser from the transport', () => {
+	const { transport, digi, frames } = setup();
+	assert.strictEqual(transport._emitter.listenerCount('data'), 1);
+	digi.close();
+	assert.strictEqual(transport._emitter.listenerCount('data'), 0);
+	transport.receive(apiFrame(0x90, [...MAC, 0xff, 0xfe, 0xc1, 0x7f]));
+	assert.strictEqual(frames.length, 0);
+});
+
+test('close() also detaches from a transport that has no removeListener()', () => {
+	const transport = fakeTransport();
+	delete transport.removeListener;
+	const digi = new NcdDigiParser(transport);
+	digi.close();
+	assert.strictEqual(transport._emitter.listenerCount('data'), 0);
+});
